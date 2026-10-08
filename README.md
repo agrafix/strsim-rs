@@ -7,7 +7,7 @@
 
 [Rust](https://www.rust-lang.org) implementations of [string similarity metrics]:
   - [Hamming]
-  - [Levenshtein] - distance & normalized
+  - [Levenshtein] - distance, bounded distance & normalized
   - [Optimal string alignment]
   - [Damerau-Levenshtein] - distance & normalized
   - [Jaro and Jaro-Winkler]
@@ -17,6 +17,11 @@ The normalized versions return values between `0.0` and `1.0`, where `1.0` means
 an exact match.
 
 There are also generic versions of the functions for non-string inputs.
+
+For searches with a maximum acceptable edit distance,
+`bounded_levenshtein(a, b, limit)` returns the exact distance as `Some(distance)`
+when it is within the limit, and `None` otherwise. It uses a banded search to
+reduce work for small limits and compares Unicode scalar values.
 
 ## Installation
 

@@ -266,6 +266,78 @@ pub fn levenshtein(a: &str, b: &str) -> usize {
     generic_levenshtein(&StringWrapper(a), &StringWrapper(b))
 }
 
+/// Calculates the Levenshtein distance when it is at most `max_distance`.
+/// Returns `None` if the distance exceeds that limit.
+///
+/// Like [`levenshtein`], this compares Unicode scalar values, not bytes or
+/// grapheme clusters. A limit of zero tests equality; any larger limit,
+/// including `usize::MAX`, is also accepted.
+///
+/// The dynamic programming work is restricted to a band of width
+/// `2 * max_distance + 1`, making small limits useful for similarity searches.
+/// Decoding the strings and allocating the rows take linear time and space
+/// in their lengths.
+///
+/// ```
+/// use strsim::bounded_levenshtein;
+///
+/// assert_eq!(Some(3), bounded_levenshtein("kitten", "sitting", 3));
+/// assert_eq!(None, bounded_levenshtein("kitten", "sitting", 2));
+/// assert_eq!(Some(1), bounded_levenshtein("🦀x中", "🦀中", 1));
+/// ```
+pub fn bounded_levenshtein(a: &str, b: &str, max_distance: usize) -> Option<usize> {
+    let a: Vec<_> = a.chars().collect();
+    let b: Vec<_> = b.chars().collect();
+    if max(a.len(), b.len()) - min(a.len(), b.len()) > max_distance {
+        return None;
+    }
+
+    // No edit distance exceeds the longer input, and clamping the limit
+    // keeps the sentinel representable even when max_distance is usize::MAX.
+    let limit = min(max_distance, max(a.len(), b.len()));
+    let unreachable = limit + 1;
+    let mut previous = vec![unreachable; b.len() + 1];
+    let mut current = previous.clone();
+    for (j, value) in previous.iter_mut().enumerate().take(limit + 1) {
+        *value = j;
+    }
+
+    for i in 1..=a.len() {
+        let lo = max(i.saturating_sub(limit), 1);
+        let hi = min(i.saturating_add(limit), b.len());
+        current[0] = if i <= limit { i } else { unreachable };
+        // Invalidate the cells bordering the moving band: the row buffers
+        // are reused and can otherwise contain values from an earlier row.
+        if lo > 1 {
+            current[lo - 1] = unreachable;
+        }
+        let mut row_min = current[0];
+        for j in lo..=hi {
+            current[j] = min(
+                min(previous[j] + 1, current[j - 1] + 1),
+                previous[j - 1] + usize::from(a[i - 1] != b[j - 1]),
+            )
+            .min(unreachable);
+            row_min = min(row_min, current[j]);
+        }
+        if hi < b.len() {
+            current[hi + 1] = unreachable;
+        }
+        // Every alignment reaching a later row crosses this row, and edit
+        // costs cannot decrease along a path.
+        if row_min > limit {
+            return None;
+        }
+        mem::swap(&mut previous, &mut current);
+    }
+
+    if previous[b.len()] <= limit {
+        Some(previous[b.len()])
+    } else {
+        None
+    }
+}
+
 /// Calculates a normalized score of the Levenshtein algorithm between 0.0 and
 /// 1.0 (inclusive), where 1.0 means the strings are the same.
 ///
